@@ -2,6 +2,8 @@
 
 Data analizy: 2026-02-09
 
+Analiza przygotowana z użyciem modeli AI Claude oraz Gemini.
+
 ## 1. Streszczenie
 
 Krajowy System e-Faktur (KSeF 2.0) wykorzystuje chmurowy WAF (Web Application Firewall) firmy Imperva/Incapsula (nalezacej do Thales Group) w modelu SaaS. Ruch sieciowy do wszystkich srodowisk KSeF przechodzi przez infrastrukture nalezaca do Imperva, gdzie nastepuje terminacja TLS. Oznacza to, ze Imperva technicznie posiada dostep do odszyfrowanego ruchu HTTP.
