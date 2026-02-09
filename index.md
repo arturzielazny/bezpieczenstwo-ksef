@@ -137,10 +137,7 @@ Istnieje technologia "Keyless SSL" (stosowana np. przez Cloudflare), w ktorej kl
 
 KSeF 2.0 implementuje obowiazkowe szyfrowanie hybrydowe (RSA + AES) na poziomie aplikacji.
 
-**Zrodlo: oficjalne SDK KSeF**
-- PHP: https://github.com/tommekk83/ksef-api-v2 (plik `src/Crypto.php`)
-- C#: https://github.com/CIRFMF/ksef-client-csharp
-- Java: https://github.com/CIRFMF/ksef-client-java
+**Zrodlo: oficjalna specyfikacja OpenAPI KSeF 2.0** ([CIRFMF/ksef-docs/open-api.json](https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json))
 
 **Schemat szyfrowania przy wysylce faktury:**
 
@@ -153,54 +150,81 @@ KSeF 2.0 implementuje obowiazkowe szyfrowanie hybrydowe (RSA + AES) na poziomie 
 6. Serwer MF deszyfruje fakture XML
 ```
 
-**Polecenie weryfikujace (pobranie kodu zrodlowego):**
+**Polecenie weryfikujace (pobranie specyfikacji OpenAPI):**
 
 ```bash
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Crypto.php'
+curl -sL 'https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/open-api.json' | \
+  python3 -c "import json,sys; spec=json.load(sys.stdin); print(json.dumps(spec['components']['schemas']['SendInvoiceRequest'], indent=2))"
 ```
 
-**Kluczowy fragment kodu (PHP SDK):**
+**Definicja schematu `SendInvoiceRequest` (OpenAPI):**
 
-```php
-// Generowanie klucza AES-256
-public function generateSymetricKey(): array {
-    return [
-        'key' => random_bytes(32),  // 256-bit
-        'iv'  => random_bytes(16),  // 128-bit
-    ];
-}
-
-// Szyfrowanie klucza AES kluczem publicznym MF
-public function encryptSymmetricKey(string $symmetricKey): string {
-    // RSA OAEP SHA-256/MGF1
-    return $this->mfPublicKey->encrypt($symmetricKey);
-}
-
-// Szyfrowanie XML faktury
-public function encryptXmlPayload(string $xml, string $symmetricKey, string $iv): string {
-    return openssl_encrypt($xml, 'aes-256-cbc', $symmetricKey, OPENSSL_RAW_DATA, $iv);
+```json
+{
+  "required": ["encryptedInvoiceContent", "encryptedInvoiceHash", "encryptedInvoiceSize",
+               "invoiceHash", "invoiceSize"],
+  "properties": {
+    "encryptedInvoiceContent": {
+      "type": "string",
+      "description": "Faktura zaszyfrowana algorytmem AES-256-CBC z dopelnianiem PKCS#7
+                      (kluczem przekazanym przy otwarciu sesji), zakodowana w formacie Base64.",
+      "format": "byte"
+    }
+  }
 }
 ```
 
-Szyfrowanie przy otwieraniu sesji jest **obowiazkowe** -- pole `encryption` jest wymagane (nie nullable):
+**Definicja schematu `EncryptionInfo` (OpenAPI) -- parametry szyfrowania klucza symetrycznego:**
 
-```php
-// src/Models/Operations/OpenOnlineSessionRequest.php
-public function __construct(
-    OpenOnlineSessionFormCode $formCode,
-    OpenOnlineSessionEncryption $encryption  // required
-)
+```json
+{
+  "required": ["encryptedSymmetricKey", "initializationVector"],
+  "properties": {
+    "encryptedSymmetricKey": {
+      "type": "string",
+      "description": "Klucz symetryczny o dlugosci 32 bajtow, zaszyfrowany algorytmem RSA
+                      (Padding: OAEP z SHA-256), zakodowany w formacie Base64.",
+      "format": "byte"
+    },
+    "initializationVector": {
+      "type": "string",
+      "description": "Wektor inicjalizujacy (IV) o dlugosci 16 bajtow, uzywany do szyfrowania
+                      symetrycznego, zakodowany w formacie Base64.",
+      "format": "byte"
+    }
+  }
+}
+```
+
+**Dokumentacja oficjalna ([sesja-interaktywna.md](https://github.com/CIRFMF/ksef-docs/blob/main/sesja-interaktywna.md)):**
+
+> "Przed otwarciem sesji oraz wyslaniem faktur wymagane jest: wygenerowanie klucza symetrycznego... zaszyfrowanie dokumentu algorytmem AES-256-CBC... zaszyfrowanie klucza symetrycznego algorytmem RSAES-OAEP"
+
+**Potwierdzenie w oficjalnym kliencie C# ([CryptographyService.cs](https://github.com/CIRFMF/ksef-client-csharp)):**
+
+```csharp
+aes.KeySize = 256;
+aes.Mode = CipherMode.CBC;
+aes.Padding = PaddingMode.PKCS7;
+```
+
+Szyfrowanie przy otwieraniu sesji jest **obowiazkowe** -- pole `encryption` jest wymagane w schemacie `OpenOnlineSessionRequest` (OpenAPI):
+
+```json
+"required": ["encryption", "formCode"]
 ```
 
 ### 4.2. Mechanizm szyfrowania -- masowy eksport faktur
 
 Eksport (pobieranie) faktur w paczkach rowniez wymaga podania klucza szyfrujacego.
 
+**Zrodlo: oficjalna specyfikacja OpenAPI KSeF 2.0** ([CIRFMF/ksef-docs/open-api.json](https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json))
+
 **Polecenie weryfikujace:**
 
 ```bash
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Models/Operations/ExportRequest.php'
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Models/Operations/ExportEncryption.php'
+curl -sL 'https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/open-api.json' | \
+  python3 -c "import json,sys; spec=json.load(sys.stdin); print(json.dumps(spec['components']['schemas']['InvoiceExportRequest'], indent=2))"
 ```
 
 **Schemat szyfrowania przy eksporcie:**
@@ -215,52 +239,88 @@ curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Model
    (klient zna klucz, bo sam go wygenerował w kroku 1)
 ```
 
-Pole `encryption` w `ExportRequest` jest **wymagane**:
+Pole `encryption` w schemacie `InvoiceExportRequest` jest **wymagane** (OpenAPI):
 
-```php
-// src/Models/Operations/ExportRequest.php
-public function __construct(
-    ExportEncryption $encryption,  // required
-    Filters $filters
-)
+```json
+"required": ["encryption", "filters"]
 ```
 
-Z dokumentacji API: "Paczka faktur jest dzielona na czesci o maksymalnym rozmiarze 50 MB. Kazda czesc jest zaszyfrowana algorytmem AES-256-CBC z dopelnieniem PKCS#7, przy uzyciu klucza symetrycznego przekazanego podczas inicjowania eksportu."
+Pole `encryption` odwoluje sie do schematu `EncryptionInfo` (RSA OAEP z SHA-256) -- identycznego jak przy otwieraniu sesji. Opis endpointu `POST /invoices/exports` w OpenAPI: "Wymagane jest przekazanie informacji o szyfrowaniu w polu **Encryption**, ktore sluza do zabezpieczenia przygotowanej paczki z fakturami."
+
+**Dokumentacja oficjalna ([sesja-wsadowa.md](https://github.com/CIRFMF/ksef-docs/blob/main/sesja-wsadowa.md)):**
+
+> "Kazda czesc nalezy zaszyfrowac nowo wygenerowanym kluczem AES-256-CBC z dopelnianiem PKCS#7"
 
 ### 4.3. Brak szyfrowania -- pobieranie pojedynczej faktury
 
 Endpoint `GET /invoices/ksef/{ksefNumber}` zwraca fakture jako **plain XML** bez szyfrowania na poziomie aplikacji.
 
+**Zrodlo: oficjalna specyfikacja OpenAPI KSeF 2.0** ([CIRFMF/ksef-docs/open-api.json](https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json))
+
 **Polecenie weryfikujace:**
 
 ```bash
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Invoices.php'
+curl -sL 'https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/open-api.json' | \
+  python3 -c "
+import json, sys
+spec = json.load(sys.stdin)
+ep = spec['paths']['/invoices/ksef/{ksefNumber}']['get']['responses']['200']
+print(json.dumps(ep, indent=2))
+"
 ```
 
-**Kluczowy fragment kodu:**
+**Definicja odpowiedzi endpointu (OpenAPI):**
 
-```php
-// Invoices.php -- metoda getByKsefNumber
-$httpOptions['headers']['Accept'] = 'application/xml';  // oczekuje plain XML
-// ...
-$obj = $httpResponse->getBody()->getContents();  // surowy XML, brak deszyfrowania
-return new Operations\GetByKsefNumberResponse(
-    // ...
-    res: $obj  // typ: ?string -- zwykly string
-);
+```json
+{
+  "description": "OK",
+  "content": {
+    "application/xml": {
+      "schema": {
+        "type": "string"
+      }
+    }
+  }
+}
 ```
 
-Brak jakiegokolwiek parametru szyfrowania w requeście. Brak logiki deszyfrowania w odpowiedzi. Odpowiedz to `?string $res`.
+Typ odpowiedzi to `application/xml` jako zwykly `string`. Brak jakiejkolwiek wzmianki o szyfrowaniu, brak pola `encryption`, brak schematu deszyfrowania.
+
+**Potwierdzenie w oficjalnym kliencie C# ([InvoiceDownloadClient.cs](https://github.com/CIRFMF/ksef-client-csharp)):**
+
+Metoda `GetInvoiceAsync` wykonuje GET z naglowkiem `Accept: application/xml` i zwraca `Task<string>` -- surowy XML bez jakiejkolwiek logiki deszyfrowania.
 
 ### 4.4. Brak szyfrowania -- metadane faktur
 
 Endpoint `POST /invoices/query/metadata` zwraca metadane (NIP-y, kwoty, daty, typy faktur) jako **plain JSON**.
 
+**Zrodlo: oficjalna specyfikacja OpenAPI KSeF 2.0** ([CIRFMF/ksef-docs/open-api.json](https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json))
+
 **Polecenie weryfikujace:**
 
 ```bash
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/docs/sdks/invoices/README.md'
+curl -sL 'https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/open-api.json' | \
+  python3 -c "
+import json, sys
+spec = json.load(sys.stdin)
+ep = spec['paths']['/invoices/query/metadata']['post']['responses']['200']
+print(json.dumps(ep, indent=2))
+"
 ```
+
+**Definicja odpowiedzi endpointu (OpenAPI):**
+
+```json
+{
+  "content": {
+    "application/json": {
+      "schema": { "$ref": "#/components/schemas/QueryInvoicesMetadataResponse" }
+    }
+  }
+}
+```
+
+Schema `QueryInvoicesMetadataResponse` zawiera tablice `invoices` z obiektami `InvoiceMetadata`, ktore obejmuja m.in. pola: `ksefNumber`, `invoiceNumber`, `seller` (z `nip`), `buyer` (z `identifier`), `netAmount`, `grossAmount`, `vatAmount`, `currency`. Wszystko w plain JSON -- brak jakiegokolwiek szyfrowania.
 
 ### 4.5. Podsumowanie szyfrowania wedlug endpointow
 
@@ -348,42 +408,60 @@ Klucz publiczny MF jest pobierany dynamicznie z endpointu API:
 GET /security/public-key-certificates
 ```
 
-**Polecenia weryfikujace:**
+**Zrodlo: oficjalna specyfikacja OpenAPI KSeF 2.0** ([CIRFMF/ksef-docs/open-api.json](https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json))
+
+**Polecenie weryfikujace:**
 
 ```bash
-# Kod endpointu w SDK
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Security.php'
-
-# Model odpowiedzi
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/src/Models/Components/PublicKeyCertificate.php'
-
-# Dokumentacja endpointu
-curl -sL 'https://raw.githubusercontent.com/tommekk83/ksef-api-v2/main/docs/sdks/security/README.md'
+curl -sL 'https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/open-api.json' | \
+  python3 -c "
+import json, sys
+spec = json.load(sys.stdin)
+ep = spec['paths']['/security/public-key-certificates']['get']
+print(json.dumps(ep, indent=2))
+schema = spec['components']['schemas']['PublicKeyCertificate']
+print('\nPublicKeyCertificate schema:')
+print(json.dumps(schema, indent=2))
+"
 ```
 
 **Kluczowe obserwacje:**
 
 1. Endpoint `GET /security/public-key-certificates` **nie wymaga uwierzytelnienia** -- jest publiczny
 2. Odpowiedz zawiera certyfikat w formacie DER/Base64 z polami `validFrom`, `validTo` i `usage`
-3. SDK **nie zawiera wbudowanego (pinowanego) klucza publicznego MF** -- za kazdym razem pobiera go z API
+3. Oficjalne klienty SDK **nie zawieraja wbudowanego (pinowanego) klucza publicznego MF** -- za kazdym razem pobieraja go z API
 4. Ruch do tego endpointu przechodzi przez Imperva (jak kazdy ruch do KSeF)
-5. Zaden z analizowanych SDK (PHP, C#, Java) nie implementuje walidacji certyfikatu klucza publicznego MF wzgledem niezaleznego zrodla
+5. Zaden z oficjalnych klientow SDK (C#, Java) nie implementuje walidacji certyfikatu klucza publicznego MF wzgledem niezaleznego zrodla
 
-**Model danych zwracanych z endpointu:**
+**Schema `PublicKeyCertificate` (OpenAPI):**
 
-```php
-// src/Models/Components/PublicKeyCertificate.php
-class PublicKeyCertificate {
-    public string $certificate;       // DER Base64 -- sam klucz publiczny
-    public \DateTime $validFrom;
-    public \DateTime $validTo;
-    public array $usage;              // KsefTokenEncryption | SymmetricKeyEncryption
+```json
+{
+  "properties": {
+    "certificate": { "type": "string", "description": "Certyfikat w formacie Base64" },
+    "validFrom": { "type": "string", "format": "date-time" },
+    "validTo": { "type": "string", "format": "date-time" },
+    "usage": {
+      "type": "array",
+      "items": { "$ref": "#/components/schemas/PublicKeyCertificateUsage" }
+    }
+  }
 }
 ```
 
-Pole `usage` przyjmuje wartosci:
-- `KsefTokenEncryption` -- szyfrowanie tokenow KSeF w procesie uwierzytelniania
-- `SymmetricKeyEncryption` -- szyfrowanie klucza symetrycznego do szyfrowania faktur
+**Enum `PublicKeyCertificateUsage` (OpenAPI):**
+
+```json
+{
+  "enum": ["KsefTokenEncryption", "SymmetricKeyEncryption"],
+  "description": "KsefTokenEncryption -- szyfrowanie tokenow KSeF w procesie uwierzytelniania.
+                  SymmetricKeyEncryption -- szyfrowanie klucza symetrycznego do szyfrowania faktur."
+}
+```
+
+**Oficjalny klient C# ([CryptographyClient.cs](https://github.com/CIRFMF/ksef-client-csharp)):** wykonuje prosty GET na `/v2/security/public-key-certificates` i zwraca kolekcje `PemCertificateInfo`. Brak jakiejkolwiek logiki pinningu certyfikatu.
+
+**Oficjalny klient Java ([DefaultCryptographyService.java](https://github.com/CIRFMF/ksef-client-java)):** metoda `initCryptographyService` pobiera certyfikaty przez `ksefClient.retrievePublicKeyCertificate()` i filtruje po `PublicKeyCertificateUsage.SYMMETRICKEYENCRYPTION`. **Brak pinningu** -- brak porownania z jakimkolwiek zaufanym hashem lub kluczem wbudowanym.
 
 #### 6.4.2. Scenariusz ataku
 
@@ -469,7 +547,8 @@ Analiza przeprowadzona z uzyciem:
 - `whois` -- identyfikacja wlasciciela IP (rejestr ARIN)
 - `tracepath` -- sciezka sieciowa do serwera
 - `openssl s_client` + `openssl x509` -- analiza certyfikatu SSL/TLS
-- Analiza kodu zrodlowego SDK KSeF 2.0 (PHP: github.com/tommekk83/ksef-api-v2)
+- Analiza oficjalnej specyfikacji OpenAPI KSeF 2.0 (github.com/CIRFMF/ksef-docs/open-api.json)
+- Analiza oficjalnych klientow SDK (C#: github.com/CIRFMF/ksef-client-csharp, Java: github.com/CIRFMF/ksef-client-java)
 - Analiza oficjalnej dokumentacji CIRFMF (github.com/CIRFMF/ksef-docs)
 
 Wszystkie polecenia mozna powtorzyc z dowolnej maszyny Linux z dostepem do internetu. Adresy IP i rekordy DNS moga ulec zmianie -- wyniki sa aktualne na dzien analizy.
@@ -478,8 +557,8 @@ Wszystkie polecenia mozna powtorzyc z dowolnej maszyny Linux z dostepem do inter
 
 - Oficjalna dokumentacja KSeF: https://ksef.podatki.gov.pl/
 - Repozytorium CIRFMF (dokumentacja techniczna MF): https://github.com/CIRFMF/ksef-docs
-- SDK PHP KSeF 2.0: https://github.com/tommekk83/ksef-api-v2
-- SDK C# KSeF: https://github.com/CIRFMF/ksef-client-csharp
-- SDK Java KSeF: https://github.com/CIRFMF/ksef-client-java
+- Oficjalna specyfikacja OpenAPI KSeF 2.0: https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json
+- Oficjalny klient C# KSeF: https://github.com/CIRFMF/ksef-client-csharp
+- Oficjalny klient Java KSeF: https://github.com/CIRFMF/ksef-client-java
 - Komunikat MF o zmianie adresow: https://www.gov.pl/web/finanse/przypominamy-o-zmianie-adresow-srodowisk-ksef--komunikat-dla-integratorow
 - Imperva WAF deployment models: https://www.imperva.com/products/web-application-firewall-waf/
