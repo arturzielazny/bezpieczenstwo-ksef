@@ -5,6 +5,40 @@ Rewizja: 2026-09-29 (ponowna weryfikacja wszystkich pomiarów, specyfikacji Open
 
 Analiza przygotowana z użyciem modeli AI Claude oraz Gemini.
 
+## Opinia: czy suwerenne państwo powinno w ten sposób eksponować dane o swojej gospodarce?
+
+> Ta sekcja to **ocena autorska**, oddzielona od części technicznej. Opiera się na ustaleniach z sekcji 2-6, ale jej wnioski są opinią, a nie wynikiem pomiaru.
+
+**Krótka odpowiedź: nie w tej postaci.** Problemem nie jest dowód nadużycia, bo takiego nie ma. Problemem jest to, że państwo oddało techniczną możliwość wglądu podmiotowi, którego nie kontroluje, i nie zbudowało zabezpieczeń, które by tę możliwość zneutralizowały.
+
+### Dlaczego to problem
+
+1. **KSeF to nie zwykła strona rządowa.** Od 2026 roku przechodzą przez niego niemal wszystkie faktury B2B w Polsce. W danych z KSeF widać, kto komu sprzedaje, za ile, jak często i z jaką marżą. Obejmuje to łańcuchy dostaw przemysłu zbrojeniowego, energetyki, infrastruktury krytycznej i spółek skarbu państwa. Zbiorczo to mapa gospodarki w czasie rzeczywistym. Pojedyncza faktura jest mało warta, ale ich strumień ma wartość wywiadowczą.
+2. **Dane faktycznie przechodzą jawnie przez warstwę zewnętrznego operatora.** Wszystkie firmy muszą odbierać faktury przez KSeF. Systemy ERP przez cały czas odpytują metadane i pobierają faktury zakupowe, więc prawdopodobnie znaczna część tego ruchu to niezaszyfrowane pobrania faktur i zapytania o metadane (sekcja 4). Nie mierzono, jaki to udział. Do tego dochodzą tokeny dostępowe, które w praktyce otwierają dostęp do całych archiwów (sekcja 6.2).
+3. **Jurysdykcja.** Imperva to spółka amerykańska, należąca do francuskiego Thales. CLOUD Act i FISA 702 pozwalają władzom USA żądać danych od amerykańskich dostawców, także przechowywanych poza USA. Często towarzyszy temu zakaz informowania klienta. MF nie ma technicznej gwarancji, że takie żądanie nie zostanie wykonane. Umowa nie jest publiczna, więc nie da się też ocenić gwarancji prawnych.
+4. **Szyfrowanie aplikacyjne daje fałszywe poczucie bezpieczeństwa.** Warstwa RSA+AES sugeruje świadomość problemu. Obejmuje jednak tylko część operacji, a tokeny bearer pozwalają ją obejść. Taka ochrona wygląda dobrze w dokumentacji, ale przed operatorem pośredniczącym nie chroni.
+
+### Argumenty drugiej strony
+
+- **DDoS jest realnym zagrożeniem.** Awaria KSeF paraliżuje fakturowanie w całym kraju. Tak system bywa celem ataków, m.in. grup prorosyjskich. Imperva ma skalę sieci, jakiej polska administracja sama szybko nie zbuduje.
+- **Thales to firma z UE i NATO,** z silnymi powiązaniami z państwem francuskim, a nie przypadkowy dostawca.
+- **Podobne modele są powszechne.** Wiele instytucji publicznych w Europie korzysta z Cloudflare, Akamai czy Impervy.
+- **Nadużycie byłoby ryzykowne dla operatora.** Wykrycie aktywnego nadużycia (np. użycia przechwyconych tokenów) oznaczałoby dla operatora katastrofę biznesową.
+
+Te argumenty tłumaczą, dlaczego tak zrobiono. Nie uzasadniają jednak, dlaczego nie zrobiono tego lepiej, bo ochronę przed DDoS da się pogodzić z poufnością.
+
+### Co byłoby właściwe
+
+1. **Oddzielić ochronę DDoS od terminacji TLS.** Filtrowanie wolumetryczne na warstwach 3 i 4 (scrubbing) nie wymaga odszyfrowania ruchu. WAF na warstwie 7 może działać u MF lub u krajowego operatora, np. NASK lub COI.
+2. **Szyfrowanie end-to-end dla wszystkich operacji na danych,** nie tylko dla wysyłki i eksportu.
+3. **Tokeny powiązane z kluczem klienta** (DPoP lub mTLS). Przechwycony token stałby się wtedy bezużyteczny.
+4. **Jawność.** Informacja, kto przetwarza ruch, w jakim zakresie, jak długo przechowuje logi i kto to audytuje.
+5. **Traktowanie KSeF jako infrastruktury krytycznej** w rozumieniu ustawy o krajowym systemie cyberbezpieczeństwa i NIS2, z wynikającymi z tego wymogami co do jurysdykcji dostawców.
+
+### Zastrzeżenie
+
+To ocena architektury, nie dowód nadużycia. Autor nie zna umowy MF z Impervą ani wyników audytów. Mogą istnieć zabezpieczenia niewidoczne z zewnątrz, np. wyłączone logowanie treści żądań. Skoro jednak nie da się tego sprawdzić, państwo prosi obywateli o zaufanie tam, gdzie mogłoby dać gwarancję techniczną. Przy danych o całej gospodarce to niewłaściwe proporcje.
+
 ## 0. Rewizja z 2026-09-29 -- co się zmieniło
 
 Od pierwotnej analizy KSeF 2.0 przeszedł w tryb obowiązkowy (1 lutego 2026 dla największych podatników i odbioru faktur, 1 kwietnia 2026 dla pozostałych; 1 stycznia 2027 dla najmniejszych). Wszystkie pomiary powtórzono, a wnioski zweryfikowano.
