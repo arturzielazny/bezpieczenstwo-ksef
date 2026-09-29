@@ -22,7 +22,7 @@ Analiza przygotowana z użyciem modeli AI Claude oraz Gemini.
 
 - **DDoS jest realnym zagrożeniem.** Awaria KSeF paraliżuje fakturowanie w całym kraju. Tak system bywa celem ataków, m.in. grup prorosyjskich. Imperva ma skalę sieci, jakiej polska administracja sama szybko nie zbuduje.
 - **Thales to firma z UE i NATO,** z silnymi powiązaniami z państwem francuskim, a nie przypadkowy dostawca.
-- **Podobne modele są powszechne.** Wiele instytucji publicznych w Europie korzysta z Cloudflare, Akamai czy Impervy.
+- **Podobne modele są powszechne.** Wiele instytucji publicznych w Europie korzysta z Cloudflare, Akamai czy Impervy. Nie dotyczy to jednak większości centralnych systemów e-faktur. W porównaniu 13 krajów (Aneks A) zagranicznego pośrednika odszyfrowującego ruch w takim systemie mają tylko Polska i Arabia Saudyjska. Włochy, Hiszpania, Węgry, Rumunia, Brazylia czy Indie utrzymują swoje systemy na infrastrukturze państwowej.
 - **Nadużycie byłoby ryzykowne dla operatora.** Wykrycie aktywnego nadużycia (np. użycia przechwyconych tokenów) oznaczałoby dla operatora katastrofę biznesową.
 
 Te argumenty tłumaczą, dlaczego tak zrobiono. Nie uzasadniają jednak, dlaczego nie zrobiono tego lepiej, bo ochronę przed DDoS da się pogodzić z poufnością.
@@ -523,3 +523,86 @@ Nie wykonywano żadnych prób ataku ani uwierzytelnienia. Wykorzystano wyłączn
 - Imperva -- certyfikaty generowane przez Imperva (GlobalSign): https://www.imperva.com/blog/add-ssl-support-to-incapsula-protected-site/ oraz https://docs-cybersec.thalesgroup.com/bundle/cloud-application-security/page/cname-account.htm
 - Certificate Transparency: https://crt.sh/?q=%25.ksef.mf.gov.pl
 - RFC 9449 (DPoP), RFC 8705 (mTLS-bound tokens), RFC 8659 (CAA)
+
+## Aneks A. Porównanie międzynarodowe -- kto obsługuje centralne systemy e-faktur
+
+Pomiar z 2026-09-29, wykonany tą samą metodą co dla KSeF (sekcja 2): DNS z CNAME, właściciel adresu IP (whois), wystawca certyfikatu TLS i nagłówki HTTP publicznych endpointów. Pytanie badawcze: czy inne państwa przekazują podmiotom zewnętrznym porównywalnie pełny obraz swojej gospodarki?
+
+**Polecenie weryfikujące (dla dowolnego hosta):**
+
+```bash
+h=mydatapi.aade.gr
+resolvectl query "$h"                                           # CNAME i IP
+whois "$(getent hosts "$h" | awk '{print $1}')" | grep -iE '^(OrgName|org-name|netname|descr|owner):'
+echo | openssl s_client -connect "$h:443" -servername "$h" 2>/dev/null | openssl x509 -noout -issuer
+curl -skI "https://$h/" | grep -iE '^(server|x-cdn|cf-ray|x-iinfo|via):'
+```
+
+### A.1. Zagraniczny pośrednik terminujący TLS (model jak w KSeF)
+
+| Kraj | System | Kto terminuje TLS | Dowód |
+|---|---|---|---|
+| **Polska** | KSeF (API, Aplikacja Podatnika, QR) | Imperva/Thales (USA/Francja) | sekcje 2-3 |
+| **Arabia Saudyjska** | ZATCA Fatoora (`gw-fatoora.zatca.gov.sa`, `fatoora.zatca.gov.sa`) | Cloudflare (USA) | CNAME `*.zatca.gov.sa.cdn.cloudflare.net`, `server: cloudflare`, `cf-ray: ...-RUH`; adresy IP w puli ZATCA (BYOIP), węzeł w Rijadzie |
+| Belgia | portal Hermes (`hermes-belgium.be`), poboczne narzędzie do Peppol | Cloudflare (USA) | `server: cloudflare`, IP z puli CLOUDFLARENET |
+
+Arabia Saudyjska jest najbliższym odpowiednikiem Polski: centralny system e-faktur stoi za amerykańskim reverse proxy. Wymuszenie własnych adresów IP i lokalnego węzła ogranicza wpływ na routing, ale nie zmienia jurysdykcji operatora.
+
+### A.2. System hostowany u amerykańskiego dostawcy chmury
+
+| Kraj | System | Infrastruktura | Dowód |
+|---|---|---|---|
+| **Meksyk** | SAT CFDI: weryfikacja faktur (`verificacfdi...`), kody QR (`consultaqr...`), **masowe pobieranie faktur** (`cfdidescargamasiva.clouda.sat.gob.mx`) | **Microsoft Azure, region South Central US (Teksas)** | CNAME `sc1-rec-pro-cses-*.southcentralus.cloudapp.azure.com`, `server: Microsoft-IIS/10.0`; strona główna `www.sat.gob.mx` przez Amazon CloudFront |
+| **Grecja** | myDATA (`mydata.aade.gr`, `mydatapi.aade.gr`) | Microsoft Azure | IP z puli MSFT, `server: Microsoft-Azure-Application-Gateway/v2` (TLS terminuje usługa Microsoftu); regionu nie ustalono |
+
+Meksyk to najdalej idący przypadek w próbie. Usługa, przez którą można pobrać całe archiwum faktur podatnika, działa fizycznie w USA. Jurysdykcja obcego państwa dotyczy więc nie tylko operatora, ale i terytorium.
+
+### A.3. Prywatni pośrednicy z założenia
+
+W tych krajach faktury z definicji przechodzą przez firmy prywatne, także z zagranicznym kapitałem:
+
+- **Meksyk.** Każda faktura CFDI musi zostać ostemplowana przez autoryzowanego pośrednika PAC (*Proveedor Autorizado de Certificación*) przed przekazaniem do SAT. Pierwszym autoryzowanym PAC była hiszpańska grupa Edicom.
+- **Francja.** Od 1 września 2026 faktury B2B idą przez platformy PA (*plateformes agréées*, dawniej PDP). DGFiP zarejestrowało 147 operatorów (stan z 21.08.2026), w tym Sovos (USA) i Pagero (Thomson Reuters).
+- **Belgia.** Od 2026 roku faktury B2B idą przez sieć Peppol i prywatnych dostawców dostępu (*access points*).
+
+Taki model rozprasza dane, bo każdy pośrednik widzi tylko faktury swoich klientów, choć najwięksi gracze gromadzą duże udziały rynku. Pośrednicy są akredytowani i regulowani przez administrację skarbową. Imperva wobec KSeF nie ma takiego statusu formalnego, a widzi ruch całego systemu. W Polsce podobny kanał istnieje w wąskim zakresie: faktury PEF z zamówień publicznych idą przez dostawców Peppol (endpoint `GET /peppol/query`).
+
+### A.4. Model suwerenny -- infrastruktura państwowa
+
+| Kraj | System | Operator (whois) |
+|---|---|---|
+| Włochy | SdI / FatturaPA | Sogei S.p.A. (spółka Ministerstwa Gospodarki i Finansów) |
+| Hiszpania | SII / VeriFactu | AEAT, własna sieć |
+| Węgry | Online Számla | NISZ (państwowy operator teleinformatyczny) |
+| Rumunia | RO e-Factura | Ministerul Finanțelor, własna sieć |
+| Portugalia | Portal das Finanças | Autoridade Tributária (łącze Vodafone PT, bez proxy) |
+| Chorwacja | fiskalizacja | APIS IT d.o.o. (spółka państwowa) |
+| Serbia | SEF | Kancelaria ds. IT i e-administracji |
+| Turcja | e-Fatura / e-Arşiv | Ministerstwo Finansów (VEDOP) |
+| Indie | IRP / GST | NIC, GSTN |
+| Brazylia | NF-e | SERPRO, Prodesp (państwowe) |
+| Chile | DTE | Servicio de Impuestos Internos, własna sieć |
+
+Te kraje używają zagranicznych urzędów certyfikacji (Sectigo, GlobalSign, DigiCert). Dla poufności nie ma to znaczenia, bo CA podpisuje certyfikat, ale nie widzi ruchu. Kraje o najdłuższym doświadczeniu z obowiązkowymi e-fakturami (Włochy, Brazylia, Chile, Turcja, Indie) zbudowały infrastrukturę państwową. Wskazuje to, że duża skala systemu nie wymusza zagranicznego pośrednika.
+
+### A.5. Inne kanały, którymi wypływa obraz gospodarki
+
+- **Płatności kartowe.** Według EBC 13 z 20 krajów strefy euro polega wyłącznie na międzynarodowych schematach kartowych (Visa, Mastercard), a schematy międzynarodowe obsługują ok. 61% płatności kartowych w strefie euro. Polska ma krajową alternatywę w postaci BLIK.
+- **SWIFT.** Na mocy umowy UE–USA z 2010 roku (Terrorist Finance Tracking Program) Departament Skarbu USA ma dostęp do wybranych danych o przelewach międzynarodowych.
+
+### A.6. Wnioski z porównania
+
+1. Polska nie jest wyjątkiem, ale należy do mniejszości. W próbie 13 krajów tylko Polska i Arabia Saudyjska mają zagranicznego pośrednika odszyfrowującego ruch centralnego systemu e-faktur, a Meksyk i Grecja mają system w amerykańskiej chmurze.
+2. Wśród badanych krajów UE z centralnym systemem clearingowym (Włochy, Hiszpania, Węgry, Rumunia, Portugalia, Chorwacja, Grecja, Polska) tylko Polska i Grecja powierzają terminację TLS podmiotowi spoza administracji.
+3. Model suwerenny jest w praktyce dominujący i sprawdza się w systemach o skali większej niż KSeF (Brazylia, Indie).
+
+**Ograniczenia:** próba 13 krajów nie jest wyczerpująca. Pomiar obejmuje tylko publiczne endpointy, więc zaplecze (bazy danych, przetwarzanie) może znajdować się gdzie indziej. Hosting u dostawcy chmury (A.2) to inny model techniczny niż reverse proxy WAF (A.1), ale kwestia jurysdykcji (US CLOUD Act) jest w obu przypadkach analogiczna.
+
+**Źródła aneksu:**
+
+- EBC: większość krajów UE polega na międzynarodowych schematach kartowych (2025): https://www.ecb.europa.eu/press/pr/date/2025/html/ecb.pr250228_1~7f0697af45.en.html
+- EBC, przemówienie P. Cipollone o cyfrowym euro (2026): https://www.ecb.europa.eu/press/key/date/2026/html/ecb.sp260401~d9106c31db.en.html
+- SAT: lista autoryzowanych PAC: https://www.sat.gob.mx/portal/public/tramites/lista-de-proveedores-autorizados-de-certificacion-de-cfdi
+- Edicom -- PAC w Meksyku: https://edicomgroup.com/es/blog/pac-psc-mexico
+- data.gouv.fr -- lista platform PA (DGFiP): https://www.data.gouv.fr/datasets/plateformes-agreees-pa-ex-pdp-pour-la-facturation-electronique-liste-dgfip-enrichie-2026
+- Liczba zarejestrowanych PA (sierpień 2026): https://tool-advisor.fr/logiciel-facturation/comparatif/liste-pa-plateforme-agree/
